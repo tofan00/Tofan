@@ -1249,18 +1249,20 @@
     function getProductImages(item){
       const images = [];
 
-      const img1 = String(item.image1 || "").trim();
-      const img2 = String(item.image2 || "").trim();
-
-      if(img1) images.push(img1);
-      if(img2) images.push(img2);
-
-      // If no dedicated checkout images are provided, fallback to product images array
-      if(!images.length && Array.isArray(item.images)){
+      // Use homepage images array first (الصورة من صفحة البداية)
+      if(Array.isArray(item.images) && item.images.length){
         item.images.forEach(img => {
           const s = String(img || "").trim();
           if(s) images.push(s);
         });
+      }
+
+      // Fallback to dedicated checkout images only if no homepage images found
+      if(!images.length){
+        const img1 = String(item.image1 || "").trim();
+        const img2 = String(item.image2 || "").trim();
+        if(img1) images.push(img1);
+        if(img2) images.push(img2);
       }
 
       if(!images.length){
