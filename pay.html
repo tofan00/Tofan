@@ -1249,21 +1249,13 @@
     function getProductImages(item){
       const images = [];
 
-      if(Array.isArray(item.images)){
-        item.images.forEach(img => {
-          const s = String(img || "").trim();
-          if(s) images.push(s);
-        });
-      }
-
       const img1 = String(item.image1 || "").trim();
       const img2 = String(item.image2 || "").trim();
 
       if(img1) images.push(img1);
       if(img2) images.push(img2);
 
-      const unique = [...new Set(images)];
-      return unique.length ? unique : ["https://via.placeholder.com/800x800?text=Image"];
+      return images.length ? images : ["https://via.placeholder.com/800x800?text=Image"];
     }
 
     function preloadImages(images = []){
