@@ -174,7 +174,7 @@
     .gallery-item{
       position:relative;
       width:100%;
-      aspect-ratio:1/1;
+      height:100%;
       border:none;
       border-radius:14px;
       overflow:hidden;
@@ -1397,14 +1397,12 @@
       const safeImages = Array.isArray(images) && images.length ? images : ["https://via.placeholder.com/800x800?text=Image"];
 
       currentGalleryImages = safeImages;
-      currentGalleryPages = chunkImages(safeImages, 2);
+      currentGalleryPages = safeImages.map(img => [img]); // One image per page
       currentGalleryPageIndex = 0;
 
       track.innerHTML = currentGalleryPages.map(page => `
         <div class="gallery-page">
-          <div class="gallery-pair">
-            ${page.map(img => createGalleryPairItem(img)).join("")}
-          </div>
+          ${page.map(img => createGalleryPairItem(img)).join("")}
         </div>
       `).join("");
 
