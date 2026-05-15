@@ -12,6 +12,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="firebase-config.js"></script>
 
   <style>
@@ -1073,8 +1074,8 @@
   <script>
     firebase.initializeApp(firebaseConfig1885);
     const rtdb = firebase.database();
-
     window.rtdb = rtdb;
+    window.fbAuth = firebase.auth();
 
     const PATHS = {
       admin: "settings1885/admin1885",
@@ -1325,7 +1326,7 @@
     }
 
     function isAdminLogged(){
-      return sessionStorage.getItem("admin_logged_1885") === "yes";
+      return !!window.fbAuth.currentUser;
     }
 
     function requireForceChangeIfNeeded(){
@@ -1343,17 +1344,12 @@
 
       setOverlayLoading(true);
       try{
+        // تسجيل الدخول عبر Firebase Authentication
+        await window.fbAuth.signInWithEmailAndPassword(email, password);
+
+        // بعد نجاح الدخول، نجلب بيانات الأدمن من قاعدة البيانات
         await ensureAdminDefaults();
 
-        const savedEmail = String(adminData.email || "").trim().toLowerCase();
-        const savedPassword = String(adminData.password || "");
-
-        if(email !== savedEmail || password !== savedPassword){
-          toast("بيانات الأدمن غير صحيحة");
-          return;
-        }
-
-        sessionStorage.setItem("admin_logged_1885", "yes");
         document.getElementById("loginScreen").classList.add("hidden");
         document.getElementById("adminScreen").classList.remove("hidden");
 
@@ -1363,15 +1359,26 @@
         toast("تم تسجيل الدخول");
       }catch(e){
         console.error(e);
-        toast("فشل تسجيل الدخول");
+        const code = e.code || "";
+        if(code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential"){
+          toast("البريد الإلكتروني أو كلمة المرور غير صحيحة");
+        } else if(code === "auth/too-many-requests"){
+          toast("تم حظر الدخول مؤقتاً بسبب كثرة المحاولات، حاول لاحقاً");
+        } else {
+          toast("فشل تسجيل الدخول: " + (e.message || code));
+        }
       }finally{
         setOverlayLoading(false);
       }
     }
     window.adminLogin = adminLogin;
 
-    function logoutAdmin(){
-      sessionStorage.removeItem("admin_logged_1885");
+    async function logoutAdmin(){
+      try{
+        await window.fbAuth.signOut();
+      }catch(e){
+        console.error(e);
+      }
       document.getElementById("adminEmail").value = "";
       document.getElementById("adminPassword").value = "";
       location.reload();
@@ -1381,33 +1388,52 @@
     async function forceChangeAdminCredentials(){
       const newEmail = str(document.getElementById("forceNewEmail").value).toLowerCase();
       const newPassword = str(document.getElementById("forceNewPassword").value);
-      const confirm = str(document.getElementById("forceConfirmPassword").value);
+      const confirmVal = str(document.getElementById("forceConfirmPassword").value);
 
       if(!newEmail || !newEmail.includes("@")){
         toast("أدخل بريدًا صحيحًا");
         return;
       }
-      if(newPassword.length < 4){
-        toast("كلمة المرور يجب أن تكون 4 أحرف أو أكثر");
+      if(newPassword.length < 6){
+        toast("كلمة المرور يجب أن تكون 6 أحرف أو أكثر");
         return;
       }
-      if(newPassword !== confirm){
+      if(newPassword !== confirmVal){
         toast("تأكيد كلمة المرور غير مطابق");
         return;
       }
 
       setOverlayLoading(true);
       try{
-        adminData = {...adminData, email:newEmail, password:newPassword, mustChange:false, updatedAt:Date.now()};
+        const user = window.fbAuth.currentUser;
+        if(!user){
+          toast("يجب تسجيل الدخول أولاً");
+          return;
+        }
+
+        // تحديث الباسورد في Firebase Auth
+        await user.updatePassword(newPassword);
+
+        // تحديث البريد إذا تغيّر
+        if(newEmail !== user.email){
+          await user.updateEmail(newEmail);
+        }
+
+        // تحديث قاعدة البيانات (بدون حفظ الباسورد)
+        adminData = {...adminData, email: newEmail, mustChange: false, updatedAt: Date.now()};
         await rtdb.ref(PATHS.admin).set(adminData);
+
         document.getElementById("forceChangeWrap").style.display = "none";
         fillAdminCredentialsForm();
-        document.getElementById("adminEmail").value = "";
-        document.getElementById("adminPassword").value = "";
         toast("تم تغيير بيانات الأدمن");
       }catch(e){
         console.error(e);
-        toast("فشل تغيير بيانات الأدمن");
+        const code = e.code || "";
+        if(code === "auth/requires-recent-login"){
+          toast("يرجى تسجيل الخروج والدخول مجدداً ثم إعادة المحاولة");
+        } else {
+          toast("فشل تغيير بيانات الأدمن: " + (e.message || code));
+        }
       }finally{
         setOverlayLoading(false);
       }
@@ -1429,20 +1455,12 @@
       const newPassword = str(document.getElementById("adminNewPassword").value);
       const confirmPassword = str(document.getElementById("adminConfirmPassword").value);
 
-      if(currentEmail !== String(adminData.email || "").toLowerCase()){
-        toast("البريد الحالي غير صحيح");
-        return;
-      }
-      if(currentPassword !== String(adminData.password || "")){
-        toast("كلمة المرور الحالية غير صحيحة");
-        return;
-      }
       if(!newEmail || !newEmail.includes("@")){
         toast("أدخل البريد الجديد بشكل صحيح");
         return;
       }
-      if(newPassword.length < 4){
-        toast("كلمة المرور الجديدة يجب أن تكون 4 أحرف أو أكثر");
+      if(newPassword.length < 6){
+        toast("كلمة المرور الجديدة يجب أن تكون 6 أحرف أو أكثر");
         return;
       }
       if(newPassword !== confirmPassword){
@@ -1452,15 +1470,43 @@
 
       setOverlayLoading(true);
       try{
-        adminData = {...adminData, email:newEmail, password:newPassword, mustChange:false, updatedAt:Date.now()};
+        const user = window.fbAuth.currentUser;
+        if(!user){
+          toast("يجب تسجيل الدخول أولاً");
+          return;
+        }
+
+        // إعادة المصادقة قبل تغيير البريد أو الباسورد
+        const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
+        await user.reauthenticateWithCredential(credential);
+
+        // تحديث الباسورد في Firebase Auth
+        await user.updatePassword(newPassword);
+
+        // تحديث البريد في Firebase Auth إذا تغيّر
+        if(newEmail !== user.email){
+          await user.updateEmail(newEmail);
+        }
+
+        // تحديث البيانات في قاعدة البيانات (بدون حفظ الباسورد)
+        adminData = {...adminData, email: newEmail, mustChange: false, updatedAt: Date.now()};
         await rtdb.ref(PATHS.admin).set(adminData);
+
         fillAdminCredentialsForm();
-        document.getElementById("adminEmail").value = "";
-        document.getElementById("adminPassword").value = "";
+        document.getElementById("adminCurrentPassword").value = "";
+        document.getElementById("adminNewPassword").value = "";
+        document.getElementById("adminConfirmPassword").value = "";
         toast("تم تحديث بيانات الأدمن");
       }catch(e){
         console.error(e);
-        toast("فشل تحديث بيانات الأدمن");
+        const code = e.code || "";
+        if(code === "auth/wrong-password" || code === "auth/invalid-credential"){
+          toast("كلمة المرور الحالية غير صحيحة");
+        } else if(code === "auth/email-already-in-use"){
+          toast("البريد الإلكتروني مستخدم بالفعل");
+        } else {
+          toast("فشل تحديث البيانات: " + (e.message || code));
+        }
       }finally{
         setOverlayLoading(false);
       }
@@ -2439,7 +2485,13 @@
       }
     }
 
-    window.addEventListener("load", boot);
+    // ننتظر Firebase Auth يتحقق من الجلسة أولاً قبل تشغيل boot
+    window.addEventListener("load", () => {
+      const unsubscribe = window.fbAuth.onAuthStateChanged(() => {
+        unsubscribe(); // نفصل الـ listener بعد أول استدعاء
+        boot();
+      });
+    });
   </script>
 
   <script src="admin2.js"></script>
